@@ -1,4 +1,4 @@
-﻿import json
+import json
 from typing import Any
 
 import outlines as outlines_lib
@@ -84,10 +84,10 @@ def run_plain_prompt(model, prompt: str, max_new_tokens: int = 512, **kwargs):
 
 def _to_raw_output(value: Any) -> str:
     if isinstance(value, BaseModel):
-        return value.model_dump_json(indent=2)
+        return json.dumps(value.model_dump(mode="json"), indent=2, ensure_ascii=False)
     if isinstance(value, str):
         return value
-    return json.dumps(value, indent=2, default=str)
+    return json.dumps(value, indent=2, ensure_ascii=False, default=str)
 
 
 def _extract_actual_output(value: Any) -> dict[str, Any] | None:
@@ -105,23 +105,26 @@ def _extract_actual_output(value: Any) -> dict[str, Any] | None:
     return None
 
 
-def run_structured_extraction(model, prompt: str, max_new_tokens: int = 1024, **kwargs):
-    try:
-        raw_generation = model(
-            prompt,
-            AnnualReportExtraction,
-            max_new_tokens=max_new_tokens,
-            **kwargs,
-        )
-    except Exception as exc:
-        return {
-            "raw_output": f"<generation error>\n{exc}",
-            "actual_output": None,
-        }
+def run_structured_extraction(
+    model,
+    prompt: str,
+    schema=AnnualReportExtraction,
+    max_new_tokens: int = 1024,
+    **kwargs,
+):
+    raw_generation = model(
+        prompt,
+        schema,
+        max_new_tokens=max_new_tokens,
+        **kwargs,
+    )
 
+    parsed_output = _extract_actual_output(raw_generation)
     return {
-        "raw_output": _to_raw_output(raw_generation),
-        "actual_output": _extract_actual_output(raw_generation),
+        "raw_output": raw_generation,
+        "parsed_output": parsed_output,
+        "actual_output": parsed_output,
+        "generation_error": None,
     }
 
 
@@ -129,6 +132,7 @@ def run_outlines_json(model, prompt: str, schema=None, max_new_tokens: int = 102
     return run_structured_extraction(
         model=model,
         prompt=prompt,
+        schema=schema or AnnualReportExtraction,
         max_new_tokens=max_new_tokens,
         **kwargs,
     )
@@ -154,10 +158,14 @@ def run_test_case(model, case: dict[str, Any], max_new_tokens: int = 2048) -> di
         "expected_problem": case["expected_problem"],
         "prompt": case["prompt"],
         "raw_output": extraction["raw_output"],
+        "parsed_output": extraction["parsed_output"],
         "actual_output": extraction["actual_output"],
+        "generation_error": extraction["generation_error"],
         "comparison_table": comparison_table,
         "matched_fields": matched_fields,
         "total_fields": total_fields,
         "match_rate": match_rate,
         "main_differences": summarize_mismatches(comparison_table),
     }
+
+
